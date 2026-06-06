@@ -16,7 +16,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
--- CONFIGURACOES GLOBAIS
+-- CONFIGURACOES GLOBBAIS
 local ESP_ENABLED           = false
 local HITBOX_ENABLED        = false
 local KILLAURA_ENABLED      = false
