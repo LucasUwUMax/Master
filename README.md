@@ -1,6 +1,3 @@
--- [[ CHERRY HUB V9.3 - REVISADO E CORRIGIDO ]]
--- Desenvolvido por luks & Zapia AI
-
 local redzlib = loadstring(game:HttpGet("https://raw.githubusercontent.com/minhdepzai-v/LibraryRobloc/refs/heads/main/RedzLibrary.lua"))()
 
 local Window = redzlib:MakeWindow({
@@ -44,6 +41,7 @@ local SCRIPT_DETECTION = false
 local AUTO_GRAB_GUN    = false
 local CHAT_REVEALER    = false
 local XRAY_ENABLED     = false
+local WALLBANG_ENABLED = false -- Nova para o pedido de atravessar parede
 
 -- =============================================
 -- SISTEMA DE ESP & X-RAY
@@ -86,21 +84,19 @@ task.spawn(function()
     end
 end)
 
--- X-Ray Logic (Otimizada para não pesar)
-local function setXray(enabled)
-    for _, v in pairs(workspace:GetDescendants()) do
-        if v:IsA("BasePart") and not v:IsDescendantOf(lp.Character) then
-            v.LocalTransparencyModifier = enabled and 0.5 or 0
-        end
-    end
-end
-
+-- X-Ray Logic
 task.spawn(function()
-    local lastState = XRAY_ENABLED
     while true do
-        if XRAY_ENABLED ~= lastState then
-            setXray(XRAY_ENABLED)
-            lastState = XRAY_ENABLED
+        if XRAY_ENABLED then
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("BasePart") and not v:IsDescendantOf(game.Players.LocalPlayer.Character) then
+                    v.LocalTransparencyModifier = 0.5
+                end
+            end
+        else
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("BasePart") then v.LocalTransparencyModifier = 0 end
+            end
         end
         task.wait(1)
     end
@@ -108,7 +104,7 @@ end)
 
 
 -- =============================================
--- SISTEMA DE FLING (MANTIDO E POTENTE)
+-- SISTEMA DE FLING (REVISADO E POTENTE)
 -- =============================================
 local function executeFling(targetPlayer, mode)
     if not targetPlayer or not targetPlayer.Character then return end
@@ -166,9 +162,12 @@ local function executeFling(targetPlayer, mode)
     end
 end
 
+
 -- =============================================
--- COMBATE: XERIFE (FIXED), SILENT AIM & SPECTATE FIX
+-- COMBATE: SILENT AIM, AIMBOT & AUTO-GRAB
 -- =============================================
+
+-- Função específica para achar o Assassino (Xerife focado)
 local function getMurderer()
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= lp and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
@@ -180,33 +179,59 @@ local function getMurderer()
     return nil
 end
 
+-- Função para o Aimbot de Faca (Mantendo a lógica original por proximidade)
+local function getClosestPlayer()
+    local target, dist = nil, math.huge
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= lp and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character.Humanoid.Health > 0 then
+            local d = (lp.Character.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
+            if d < dist then dist = d; target = p end
+        end
+    end
+    return target
+end
+
 RunService.RenderStepped:Connect(function()
-    -- Lógica Xerife: Só atira/mira se for o Murderer
+    -- Lógica Xerife Otimizada (Wallbang & Auto Shoot)
     if SILENT_AIM_GUN then
         local target = getMurderer()
         if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
             local tool = lp.Character:FindFirstChildOfClass("Tool")
             if tool and (tool.Name == "Gun" or tool.Name == "Revolver") then
+                local tHRP = target.Character.HumanoidRootPart
                 -- Mira no Murderer
-                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, target.Character.HumanoidRootPart.Position)
-                -- Auto Shoot (Ativa a arma)
+                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, tHRP.Position)
+                
+                -- Auto Shoot & Wallbang Data
                 tool:Activate()
+                if WALLBANG_ENABLED then
+                    -- Envia sinal de tiro direto na posição do Murderer para ignorar a parede
+                    local shootEvent = ReplicatedStorage:FindFirstChild("ShootGun", true) or ReplicatedStorage:FindFirstChild("ReloadGun", true)
+                    if shootEvent and shootEvent:IsA("RemoteEvent") then
+                        shootEvent:FireServer(tHRP.Position) 
+                    end
+                end
             end
         end
     end
 
-    -- Silent Aim de Faca (Ainda por proximidade)
+    -- Aimbot de Faca (Original)
     if SILENT_AIM_KNIFE then
-        local target = getMurderer() == nil and nil or getMurderer() -- Exemplo, pode ser expandido
-        -- Mantido para não quebrar a lógica original mas focado em alvos válidos
+        local target = getClosestPlayer()
+        if target and target.Character then
+            local tool = lp.Character:FindFirstChildOfClass("Tool")
+            if tool and tool.Name == "Knife" then
+                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, target.Character.HumanoidRootPart.Position)
+            end
+        end
     end
 
     -- RESOLUÇÃO DO BUG DE SPECTATE (VIEW ALVO)
-    -- Garante que a câmera não seja forçada de volta pelo script do jogo
+    -- Mantém a visão no alvo sem deixar o script do jogo puxar de volta
     if viewEnabled and selectedPlayer and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("Humanoid") then
         workspace.CurrentCamera.CameraSubject = selectedPlayer.Character.Humanoid
     else
-        -- Se o Spectate Alvo estiver desligado, volta pro jogador
+        -- Se desligado, garante que a visão volte pro seu boneco corretamente
         if lp.Character and lp.Character:FindFirstChild("Humanoid") then
             if workspace.CurrentCamera.CameraSubject ~= lp.Character.Humanoid then
                 workspace.CurrentCamera.CameraSubject = lp.Character.Humanoid
@@ -216,49 +241,12 @@ RunService.RenderStepped:Connect(function()
 end)
 
 
--- =============================================
--- AUTO FARM DE MOEDAS (FIXED 2026) & GRAB GUN
--- =============================================
-local function getCoinContainer()
-    -- Procura nos locais comuns onde o MM2 spawna moedas agora
-    return workspace:FindFirstChild("Normal") and workspace.Normal:FindFirstChild("CoinContainer") 
-        or workspace:FindFirstChild("CoinContainer")
-end
-
+-- Auto Grab Gun (Original Restaurado e Corrigido)
 task.spawn(function()
     while true do
-        if COIN_ENABLED and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
-            local container = getCoinContainer()
-            if container then
-                for _, coin in pairs(container:GetChildren()) do
-                    if not COIN_ENABLED then break end
-                    if coin:IsA("BasePart") or coin:FindFirstChild("Coin") then
-                        local coinPart = coin:IsA("BasePart") and coin or coin:FindFirstChildOfClass("BasePart")
-                        if coinPart then
-                            -- Usa Tween para evitar detecção de teleporte instantâneo
-                            local dist = (lp.Character.HumanoidRootPart.Position - coinPart.Position).Magnitude
-                            local waitTime = dist / FARM_SPEED
-                            
-                            local tween = TweenService:Create(lp.Character.HumanoidRootPart, TweenInfo.new(waitTime, Enum.EasingStyle.Linear), {CFrame = coinPart.CFrame})
-                            tween:Play()
-                            tween.Completed:Wait()
-                            task.wait(0.1) -- Pequeno delay para garantir a coleta
-                        end
-                    end
-                end
-            end
-        end
-        task.wait(1)
-    end
-end)
-
--- Auto Grab Gun Corrigido
-task.spawn(function()
-    while true do
-        if AUTO_GRAB_GUN and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
-            -- O MM2 costuma chamar a arma caída de "GunDrop"
+        if AUTO_GRAB_GUN then
             local gun = workspace:FindFirstChild("GunDrop") or workspace:FindFirstChild("Gun")
-            if gun and (gun:IsA("BasePart") or gun:FindFirstChild("Handle")) then
+            if gun and (gun:IsA("BasePart") or gun:FindFirstChild("Handle")) and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
                 local handle = gun:IsA("BasePart") and gun or gun.Handle
                 lp.Character.HumanoidRootPart.CFrame = handle.CFrame
             end
@@ -268,7 +256,82 @@ task.spawn(function()
 end)
 
 -- =============================================
--- CHAT REVEALER (MANTIDO)
+-- SISTEMA DE FARM DE MOEDAS (CORRIGIDO 2026)
+-- =============================================
+-- Função para localizar o container de moedas atual (vários locais possíveis no MM2 2026)
+local function getCoinContainer()
+    local paths = {
+        workspace:FindFirstChild("Normal"),
+        workspace:FindFirstChild("Map"),
+        workspace
+    }
+    for _, path in pairs(paths) do
+        if path then
+            local container = path:FindFirstChild("CoinContainer") or path:FindFirstChild("Coins") or path:FindFirstChild("CandyContainer")
+            if container then return container end
+        end
+    end
+    return nil
+end
+
+task.spawn(function()
+    while true do
+        if COIN_ENABLED and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+            local container = getCoinContainer()
+            if container then
+                for _, coin in pairs(container:GetChildren()) do
+                    if not COIN_ENABLED then break end
+                    local coinPart = coin:IsA("BasePart") and coin or coin:FindFirstChildOfClass("BasePart")
+                    
+                    if coinPart and coinPart:FindFirstChildOfClass("TouchTransmitter") then
+                        -- Coleta via CFrame (Mais rápido e menos bugado que Tween para farm agressivo)
+                        lp.Character.HumanoidRootPart.CFrame = coinPart.CFrame
+                        task.wait(0.1) -- Tempo de coleta do servidor
+                    end
+                end
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+
+-- =============================================
+-- SISTEMA DE HITBOX & KILL AURA (RESTAURADO)
+-- =============================================
+task.spawn(function()
+    while true do
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= lp and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                -- Lógica de Hitbox (Original)
+                if HITBOX_ENABLED then
+                    p.Character.HumanoidRootPart.Size = Vector3.new(HITBOX_SIZE, HITBOX_SIZE, HITBOX_SIZE)
+                    p.Character.HumanoidRootPart.Transparency = 0.7
+                    p.Character.HumanoidRootPart.CanCollide = false
+                else
+                    p.Character.HumanoidRootPart.Size = Vector3.new(2, 2, 1)
+                    p.Character.HumanoidRootPart.Transparency = 1
+                end
+                
+                -- Lógica de Kill Aura (Original)
+                if KILLAURA_ENABLED then
+                    local dist = (lp.Character.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
+                    if dist <= KILLAURA_RADIUS then
+                        local knife = lp.Character:FindFirstChild("Knife") or lp.Backpack:FindFirstChild("Knife")
+                        if knife then
+                            lp.Character.Humanoid:EquipTool(knife)
+                            knife:Activate()
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- =============================================
+-- CHAT REVEALER (FIXED PARA SISTEMA NOVO E ANTIGO)
 -- =============================================
 local function handleChat(speaker, message)
     if CHAT_REVEALER then
@@ -277,6 +340,7 @@ local function handleChat(speaker, message)
             local isM = p.Backpack:FindFirstChild("Knife") or p.Character:FindFirstChild("Knife")
             if isM then
                 print("[Cherry Reveal] " .. p.Name .. " É O ASSASSINO!")
+                -- Opcional: Notificação na tela se quiser
             end
         end
     end
@@ -295,7 +359,7 @@ task.spawn(function()
     end
 end)
 
--- Suporte para TextChatService
+-- Suporte para TextChatService (Novo Sistema)
 if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
     TextChatService.MessageReceived:Connect(function(message)
         if message.TextSource then
@@ -306,7 +370,7 @@ end
 
 
 -- =============================================
--- CONFIGURAÇÃO DAS ABAS DA UI (CHERRY HUB V9.3)
+-- UI TABS SETUP (CHERRY HUB V9.3)
 -- =============================================
 local T1 = Window:MakeTab({"Home", ""})
 local T2 = Window:MakeTab({"Inocente", ""})
@@ -316,7 +380,7 @@ local T5 = Window:MakeTab({"Troll", ""})
 local T6 = Window:MakeTab({"Misc", ""})
 
 -- ABA HOME
-T1:AddParagraph({"🌸 Cherry Hub v9.3", "Desenvolvido por luks.\nCorreções aplicadas por Zapia AI (Regra 1 & 2)."})
+T1:AddParagraph({"🌸 Cherry Hub v9.3", "Desenvolvido por luks.\nFunções restauradas e sistema de Fling Otimizado."})
 
 -- ABA INOCENTE
 T2:AddSection({"Combate"})
@@ -335,17 +399,21 @@ end})
 T2:AddSection({"💰 Farm de Moedas"})
 T2:AddToggle({Name="Ativar Auto Farm", Default=false, Callback=function(v) COIN_ENABLED=v end})
 T2:AddSlider({Name="Velocidade do Farm", Min=10, Max=200, Default=60, Callback=function(v) FARM_SPEED=v end})
+T2:AddParagraph({"⚠️ Aviso", "Aumentar demais a velocidade do Farm tem risco de kick."})
 
 -- ABA ASSASSINO
 T3:AddSection({"🎯 Combate"})
 T3:AddToggle({Name="Aimbot de Faca", Default=false, Callback=function(v) SILENT_AIM_KNIFE=v end})
+T3:AddToggle({Name="Ativar Hitbox", Default=false, Callback=function(v) HITBOX_ENABLED=v end})
 T3:AddToggle({Name="Ativar Kill Aura", Default=false, Callback=function(v) KILLAURA_ENABLED=v end})
 
+
 -- ABA XERIFE
-T4:AddSection({"🎯 Combate Xerife (Fixed)"})
-T4:AddToggle({Name="Aimbot & Auto-Shoot", Default=false, Callback=function(v) SILENT_AIM_GUN=v end})
+T4:AddSection({"🎯 Combate"})
+T4:AddToggle({Name="Aimbot (Grudar no Murder)", Default=false, Callback=function(v) SILENT_AIM_GUN=v end})
+T4:AddToggle({Name="Silent Aim", Default=false, Callback=function(v) SILENT_AIM_GUN=v end})
+T4:AddToggle({Name="Ativar Wallbang", Default=false, Callback=function(v) WALLBANG_ENABLED=v end}) -- Nova opção
 T4:AddToggle({Name="Auto Grab Gun", Default=false, Callback=function(v) AUTO_GRAB_GUN=v end})
-T4:AddParagraph({"Dica", "O Aimbot agora só foca no Assassino e atira automaticamente."})
 
 -- ABA TROLL
 T5:AddSection({"🎯 Selecionar Alvo"})
@@ -368,19 +436,28 @@ Players.PlayerRemoving:Connect(updateDropdown)
 
 T5:AddSection({"🔥 Ações no Alvo"})
 T5:AddButton({"Fling Instant", function() if selectedPlayer then executeFling(selectedPlayer, "Instant") end end})
-T5:AddToggle({Name="View Alvo (Spectate Fix)", Default=false, Callback=function(v) viewEnabled = v end})
+T5:AddToggle({Name="View Alvo", Default=false, Callback=function(v) viewEnabled = v end})
 T5:AddToggle({Name="ESP Alvo", Default=false, Callback=function(v) playerEspEnabled = v end})
 
-T5:AddSection({"🛠️ Funções Extras"})
-T5:AddButton({"Orbit Fling", function() if selectedPlayer then executeFling(selectedPlayer, "Orbit") end end})
+T5:AddSection({"🛠️ Funções em Desenvolvimento"})
+T5:AddButton({"Orbit Fling (Risco de Kick)", function() if selectedPlayer then executeFling(selectedPlayer, "Orbit") end end})
 T5:AddButton({"Ghost Fling", function() if selectedPlayer then executeFling(selectedPlayer, "Ghost") end end})
+T5:AddButton({"Void Fling", function() if selectedPlayer then executeFling(selectedPlayer, "Void") end end})
+T5:AddParagraph({"⚠️ Aviso", "Orbit Fling pode fazer o alvo ser kickado pelo anti-cheat."})
+
 
 -- ABA MISC
 T6:AddSection({"⚡ Movimentação"})
 T6:AddSlider({Name="Velocidade", Min=16, Max=150, Default=16, Callback=function(v) if lp.Character then lp.Character.Humanoid.WalkSpeed = v end end})
+T6:AddParagraph({"⚠️ Aviso", "Aumentar demais a velocidade pode dar kick."})
 
-T6:AddSection({"🛡️ Proteção & Utilidades"})
+T6:AddSection({"🛡️ Proteção"})
+T6:AddToggle({Name="Ativar Anti-Fling", Default=false, Callback=function(v) ANTI_FLING=v end})
+T6:AddToggle({Name="Detecção de Scripts", Default=false, Callback=function(v) SCRIPT_DETECTION=v end})
+
+T6:AddSection({"👁️ Utilidades"})
 T6:AddToggle({Name="X-Ray", Default=false, Callback=function(v) XRAY_ENABLED=v end})
 T6:AddToggle({Name="Chat Revealer", Default=false, Callback=function(v) CHAT_REVEALER=v end})
 
 Window:SelectTab(T1)
+
